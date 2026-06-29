@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenOps Dashboard | BNP Paribas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-blue-400">Dashboard GreenOps</h1>
+        
+        <!-- Formulaire de saisie -->
+        <div class="grid grid-cols-2 gap-4 bg-slate-800 p-6 rounded-lg mb-8">
+            <input type="number" id="cpu" placeholder="Usage CPU (%)" class="p-2 bg-slate-700 rounded">
+            <input type="number" id="ram" placeholder="RAM (GB)" class="p-2 bg-slate-700 rounded">
+            <input type="number" id="cores" placeholder="Cœurs CPU" class="p-2 bg-slate-700 rounded">
+            <input type="number" id="year" placeholder="Année matériel" class="p-2 bg-slate-700 rounded">
+            <input type="number" id="tdp" placeholder="TDP (Watts)" class="p-2 bg-slate-700 rounded">
+            <button onclick="getPrediction()" class="bg-blue-600 hover:bg-blue-500 p-2 rounded font-bold">Calculer</button>
+        </div>
+
+        <!-- Affichage des résultats -->
+        <div id="results" class="grid grid-cols-3 gap-4">
+            <div class="bg-slate-800 p-4 rounded border-l-4 border-blue-500">
+                <p class="text-slate-400 text-sm">Consommation</p>
+                <h2 id="watts" class="text-2xl font-mono">-- W</h2>
+            </div>
+            <div class="bg-slate-800 p-4 rounded border-l-4 border-green-500">
+                <p class="text-slate-400 text-sm">Coût Annuel</p>
+                <h2 id="cost" class="text-2xl font-mono">-- €</h2>
+            </div>
+            <div class="bg-slate-800 p-4 rounded border-l-4 border-red-500">
+                <p class="text-slate-400 text-sm">Empreinte Carbone</p>
+                <h2 id="carbon" class="text-2xl font-mono">-- kg</h2>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function getPrediction() {
+            const data = {
+                cpu_usage: parseFloat(document.getElementById('cpu').value),
+                memory_gb: parseFloat(document.getElementById('ram').value),
+                cpu_cores: parseInt(document.getElementById('cores').value),
+                hardware_year: parseInt(document.getElementById('year').value),
+                tdp_limit: parseFloat(document.getElementById('tdp').value)
+            };
+
+            const response = await fetch('http://localhost:8000/predict', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            
+            document.getElementById('watts').innerText = result.predictions.predicted_watts.toFixed(2) + " W";
+            document.getElementById('cost').innerText = result.predictions.annual_cost_euros.toFixed(2) + " €";
+            document.getElementById('carbon').innerText = result.predictions.annual_carbon_kgco2e.toFixed(2) + " kg";
+        }
+    </script>
+</body>
+</html>
