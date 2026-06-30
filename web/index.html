@@ -5,60 +5,284 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GreenOps Dashboard | BNP Paribas</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .server-block {
+            transition: all 0.2s ease;
+        }
+        .server-block:hover {
+            border-color: #3b82f6;
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-white p-8">
     <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold mb-6 text-blue-400">Dashboard GreenOps</h1>
-        
-        <!-- Formulaire de saisie -->
-        <div class="grid grid-cols-2 gap-4 bg-slate-800 p-6 rounded-lg mb-8">
-            <input type="number" id="cpu" placeholder="Usage CPU (%)" class="p-2 bg-slate-700 rounded">
-            <input type="number" id="ram" placeholder="RAM (GB)" class="p-2 bg-slate-700 rounded">
-            <input type="number" id="cores" placeholder="Cœurs CPU" class="p-2 bg-slate-700 rounded">
-            <input type="number" id="year" placeholder="Année matériel" class="p-2 bg-slate-700 rounded">
-            <input type="number" id="tdp" placeholder="TDP (Watts)" class="p-2 bg-slate-700 rounded">
-            <button onclick="getPrediction()" class="bg-blue-600 hover:bg-blue-500 p-2 rounded font-bold">Calculer</button>
+
+        <!-- En-tête -->
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-400">Dashboard GreenOps</h1>
+                <p class="text-slate-400 text-sm mt-1">Audit énergétique de votre parc serveurs</p>
+            </div>
+            <span id="server-count-badge" class="bg-blue-600 text-white text-sm font-semibold px-3 py-1 rounded-full">
+                1 serveur
+            </span>
         </div>
 
-        <!-- Affichage des résultats -->
-        <div id="results" class="grid grid-cols-3 gap-4">
-            <div class="bg-slate-800 p-4 rounded border-l-4 border-blue-500">
-                <p class="text-slate-400 text-sm">Consommation</p>
-                <h2 id="watts" class="text-2xl font-mono">-- W</h2>
+        <!-- Conteneur des blocs serveurs -->
+        <div id="servers-container" class="space-y-4 mb-6">
+            <!-- Le premier bloc est injecté par JS au chargement -->
+        </div>
+
+        <!-- Boutons d'action -->
+        <div class="flex gap-4 mb-8">
+            <button
+                onclick="addServer()"
+                class="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-blue-500 text-white px-5 py-2.5 rounded-lg font-medium transition-all"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Ajouter un serveur
+            </button>
+            <button
+                onclick="runAudit()"
+                class="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg font-bold transition-colors"
+            >
+                Lancer l'audit
+            </button>
+        </div>
+
+        <!-- Zone de résultats -->
+        <div id="results-section" class="hidden">
+            <!-- KPIs agrégés -->
+            <div class="mb-4">
+                <h2 class="text-lg font-semibold text-slate-300 mb-3">Résultats globaux du parc</h2>
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="bg-slate-800 p-4 rounded-lg border-l-4 border-blue-500">
+                        <p class="text-slate-400 text-sm">Consommation totale</p>
+                        <h2 id="total-watts" class="text-2xl font-mono font-bold">-- W</h2>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-lg border-l-4 border-green-500">
+                        <p class="text-slate-400 text-sm">Coût annuel total</p>
+                        <h2 id="total-cost" class="text-2xl font-mono font-bold">-- €</h2>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-lg border-l-4 border-red-500">
+                        <p class="text-slate-400 text-sm">Empreinte carbone totale</p>
+                        <h2 id="total-carbon" class="text-2xl font-mono font-bold">-- kg</h2>
+                    </div>
+                </div>
             </div>
-            <div class="bg-slate-800 p-4 rounded border-l-4 border-green-500">
-                <p class="text-slate-400 text-sm">Coût Annuel</p>
-                <h2 id="cost" class="text-2xl font-mono">-- €</h2>
-            </div>
-            <div class="bg-slate-800 p-4 rounded border-l-4 border-red-500">
-                <p class="text-slate-400 text-sm">Empreinte Carbone</p>
-                <h2 id="carbon" class="text-2xl font-mono">-- kg</h2>
+
+            <!-- Résultats individuels -->
+            <div>
+                <h2 class="text-lg font-semibold text-slate-300 mb-3">Détail par serveur</h2>
+                <div id="individual-results" class="space-y-3"></div>
             </div>
         </div>
+
+        <!-- Message d'erreur -->
+        <div id="error-message" class="hidden bg-red-900/40 border border-red-500 text-red-300 p-4 rounded-lg mt-4"></div>
+
     </div>
 
     <script>
-        async function getPrediction() {
-            const data = {
-                cpu_usage: parseFloat(document.getElementById('cpu').value),
-                memory_gb: parseFloat(document.getElementById('ram').value),
-                cpu_cores: parseInt(document.getElementById('cores').value),
-                hardware_year: parseInt(document.getElementById('year').value),
-                tdp_limit: parseFloat(document.getElementById('tdp').value)
-            };
+        let serverCounter = 0;
 
-           const response = await fetch('http://localhost:8000/predict', {
-            
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            const result = await response.json();
-            
-            document.getElementById('watts').innerText = result.predictions.predicted_watts.toFixed(2) + " W";
-            document.getElementById('cost').innerText = result.predictions.annual_cost_euros.toFixed(2) + " €";
-            document.getElementById('carbon').innerText = result.predictions.annual_carbon_kgco2e.toFixed(2) + " kg";
+        // Crée le HTML d'un bloc serveur
+        function createServerBlock(index) {
+            const num = index + 1;
+            const div = document.createElement('div');
+            div.className = 'server-block bg-slate-800 p-5 rounded-lg border border-slate-700';
+            div.dataset.serverId = index;
+            div.innerHTML = `
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider">
+                        Serveur ${num}
+                    </h3>
+                    <div class="flex items-center gap-3">
+                        <input
+                            type="text"
+                            placeholder="Nom du serveur (optionnel)"
+                            class="server-name text-sm bg-slate-700 border border-slate-600 rounded px-3 py-1 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 w-52"
+                        />
+                        ${index > 0 ? `
+                        <button onclick="removeServer(this)" class="text-slate-500 hover:text-red-400 transition-colors" title="Supprimer ce serveur">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>` : ''}
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Usage CPU (%)</label>
+                        <input type="number" placeholder="ex: 75" min="0" max="100"
+                            class="cpu-usage w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">RAM (GB)</label>
+                        <input type="number" placeholder="ex: 64" min="0"
+                            class="memory-gb w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Cœurs CPU</label>
+                        <input type="number" placeholder="ex: 16" min="1"
+                            class="cpu-cores w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Année matériel</label>
+                        <input type="number" placeholder="ex: 2020" min="2000"
+                            class="hardware-year w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">TDP (Watts)</label>
+                        <input type="number" placeholder="ex: 250" min="0"
+                            class="tdp-limit w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
+                    </div>
+                </div>
+            `;
+            return div;
         }
+
+        // Ajoute un nouveau bloc serveur
+        function addServer() {
+            const container = document.getElementById('servers-container');
+            const block = createServerBlock(serverCounter++);
+            container.appendChild(block);
+            updateServerCount();
+            // Scroll vers le nouveau bloc
+            block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // Supprime un bloc serveur
+        function removeServer(btn) {
+            const block = btn.closest('.server-block');
+            block.remove();
+            renumberBlocks();
+            updateServerCount();
+        }
+
+        // Renumérote les titres des blocs après suppression
+        function renumberBlocks() {
+            const blocks = document.querySelectorAll('.server-block');
+            blocks.forEach((block, i) => {
+                const title = block.querySelector('h3');
+                if (title) title.textContent = `Serveur ${i + 1}`;
+            });
+        }
+
+        // Met à jour le badge de comptage
+        function updateServerCount() {
+            const count = document.querySelectorAll('.server-block').length;
+            const badge = document.getElementById('server-count-badge');
+            badge.textContent = `${count} serveur${count > 1 ? 's' : ''}`;
+        }
+
+        // Lance l'audit multi-serveurs
+        async function runAudit() {
+            const errorDiv = document.getElementById('error-message');
+            const resultsSection = document.getElementById('results-section');
+            errorDiv.classList.add('hidden');
+            resultsSection.classList.add('hidden');
+
+            // Collecte tous les blocs
+            const blocks = document.querySelectorAll('.server-block');
+            const servers = [];
+
+            for (const block of blocks) {
+                const cpu_usage   = parseFloat(block.querySelector('.cpu-usage').value);
+                const memory_gb   = parseFloat(block.querySelector('.memory-gb').value);
+                const cpu_cores   = parseInt(block.querySelector('.cpu-cores').value);
+                const hardware_year = parseInt(block.querySelector('.hardware-year').value);
+                const tdp_limit   = parseFloat(block.querySelector('.tdp-limit').value);
+                const server_name = block.querySelector('.server-name').value.trim() || null;
+
+                // Validation simple
+                if (isNaN(cpu_usage) || isNaN(memory_gb) || isNaN(cpu_cores) || isNaN(hardware_year) || isNaN(tdp_limit)) {
+                    showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
+                    return;
+                }
+
+                servers.push({ cpu_usage, memory_gb, cpu_cores, hardware_year, tdp_limit, server_name });
+            }
+
+            // Appel à l'endpoint /audit
+            try {
+                const response = await fetch('http://localhost:8000/audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        servers,
+                        audit_name: `Audit_${new Date().toLocaleDateString('fr-FR')}`
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || `Erreur HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+                displayResults(result);
+
+            } catch (err) {
+                showError(`Erreur lors de la connexion à l'API : ${err.message}`);
+            }
+        }
+
+        // Affiche les résultats
+        function displayResults(result) {
+            const kpis = result.aggregate_kpis;
+
+            document.getElementById('total-watts').textContent =
+                kpis.total_predicted_watts.toFixed(2) + ' W';
+            document.getElementById('total-cost').textContent =
+                kpis.total_annual_cost_euros.toFixed(2) + ' €';
+            document.getElementById('total-carbon').textContent =
+                kpis.total_annual_carbon_kgco2e.toFixed(2) + ' kg';
+
+            // Résultats individuels
+            const container = document.getElementById('individual-results');
+            container.innerHTML = '';
+
+            result.predictions.forEach((pred, i) => {
+                const div = document.createElement('div');
+                div.className = 'bg-slate-800/60 border border-slate-700 rounded-lg p-4 flex flex-wrap items-center gap-4';
+                div.innerHTML = `
+                    <span class="text-sm font-semibold text-blue-300 w-36 shrink-0">
+                        ${pred.server_name || `Serveur ${i + 1}`}
+                    </span>
+                    <div class="flex gap-6 text-sm font-mono">
+                        <span class="text-slate-300">
+                            <span class="text-slate-500">Conso&nbsp;</span>
+                            <strong>${pred.predicted_watts.toFixed(2)} W</strong>
+                        </span>
+                        <span class="text-green-400">
+                            <span class="text-slate-500">Coût&nbsp;</span>
+                            <strong>${pred.annual_cost_euros.toFixed(2)} €</strong>
+                        </span>
+                        <span class="text-red-400">
+                            <span class="text-slate-500">CO₂&nbsp;</span>
+                            <strong>${pred.annual_carbon_kgco2e.toFixed(2)} kg</strong>
+                        </span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('results-section').classList.remove('hidden');
+            document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Affiche un message d'erreur
+        function showError(msg) {
+            const div = document.getElementById('error-message');
+            div.textContent = msg;
+            div.classList.remove('hidden');
+        }
+
+        // Initialisation : on ajoute le premier bloc au chargement
+        addServer();
     </script>
 </body>
 </html>
