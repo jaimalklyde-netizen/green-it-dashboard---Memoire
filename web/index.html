@@ -47,7 +47,8 @@
                 tdp_limit: parseFloat(document.getElementById('tdp').value)
             };
 
-            const response = await fetch('http://localhost:8000/predict', {
+           const response = await fetch('http://localhost:8000/predict', {
+            
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(data)
