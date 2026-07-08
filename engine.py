@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List
 import pandas as pd
@@ -6,6 +8,9 @@ import joblib
 import os
 
 app = FastAPI(title="GreenOps API", version="2.0")
+
+# Servir les fichiers statiques (CSS, JS)
+app.mount("/static", StaticFiles(directory="web"), name="static")
 
 class ServerData(BaseModel):
     CPU_Usage: float
@@ -18,7 +23,7 @@ class ServerData(BaseModel):
 model_path = 'moteur_prediction_xgboost.pkl'
 if os.path.exists(model_path):
     model = joblib.load(model_path)
-    print("✅ Modèle chargé")
+    print("✅ Modèle XGBoost chargé")
 else:
     raise FileNotFoundError("❌ Modèle introuvable")
 
@@ -38,10 +43,15 @@ def root():
         "version": "2.0",
         "endpoints": {
             "POST /predict": "Prédiction pour un serveur unique",
+            "GET /dashboard": "Interface utilisateur (Dashboard)",
             "GET /docs": "Documentation interactive (Swagger UI)",
             "GET /health": "Vérifier l'état de l'API"
         }
     }
+
+@app.get("/dashboard")
+async def dashboard():
+    return FileResponse("web/index.html")
 
 @app.get("/health")
 def health():
