@@ -6,13 +6,10 @@ class GreenOpsEngine:
     """
     Moteur de calcul métier pour la traduction de l'empreinte énergétique
     en indicateurs financiers (FinOps) et écologiques (GreenOps).
-    Version 2.0 : Modèle XGBoost + 10 features (5 originales + 5 interactions)
+    Version 2.0 : Modèle XGBoost + 10 features
     """
     def __init__(self, model_path='moteur_prediction_xgboost.pkl'):
-        """
-        Initialise le moteur avec le modèle XGBoost.
-        Fallback sur Random Forest si XGBoost absent.
-        """
+        """Initialise le moteur avec le modèle XGBoost depuis le fichier .pkl"""
         if os.path.exists(model_path):
             self.model = joblib.load(model_path)
             print(f"✅ Modèle XGBoost chargé depuis {model_path}")
@@ -21,14 +18,12 @@ class GreenOpsEngine:
             fallback_path = 'moteur_prediction_specpower.pkl'
             if os.path.exists(fallback_path):
                 self.model = joblib.load(fallback_path)
-                print(f"⚠️ XGBoost introuvable, fallback sur Random Forest ({fallback_path})")
+                print(f"⚠️ Fallback sur Random Forest ({fallback_path})")
             else:
-                raise FileNotFoundError("Aucun modèle trouvé (.pkl)")
+                raise FileNotFoundError(f"❌ Aucun modèle trouvé : {model_path} ou {fallback_path}")
     
     def _add_interaction_features(self, df):
-        """
-        Ajoute les 5 variables d'interaction utilisées par le modèle XGBoost.
-        """
+        """Ajoute les 5 variables d'interaction"""
         df = df.copy()
         df["CPU_RAM_interaction"] = (df["CPU_Usage (%)"] * df["Memory_Capacity (GB)"]) / 100
         df["Cores_Year_interaction"] = df["CPU_Cores"] * (2024 - df["Hardware_Year"])
@@ -38,12 +33,8 @@ class GreenOpsEngine:
         return df
     
     def calculate_kpis(self, df, carbon_intensity=50, electricity_price=0.25):
-        """
-        Calcule les KPIs annuels sur la base des prédictions de l'IA.
-        - carbon_intensity : gCO2e/kWh (Ex: 50 pour la France)
-        - electricity_price : Prix du kWh en euros
-        """
-        # 1. Feature Engineering (10 features pour XGBoost)
+        """Calcule les KPIs annuels sur la base des prédictions"""
+        # 1. Feature Engineering (10 features)
         df_engineered = self._add_interaction_features(df)
         
         # 2. Sélection des 10 features
@@ -61,20 +52,18 @@ class GreenOpsEngine:
         ]
         X = df_engineered[features]
         
-        # 3. Prédiction des Watts
+        # 3. Prédiction
         df['Predicted_Watts'] = self.model.predict(X)
         
-        # 4. Projection sur une année complète (8760 heures)
+        # 4. KPIs
         df['Annual_Energy_kWh'] = (df['Predicted_Watts'] * 8760) / 1000
-        
-        # 5. Calculs Managériaux
         df['Annual_Cost_Euros'] = df['Annual_Energy_kWh'] * electricity_price
         df['Annual_Carbon_kgCO2e'] = (df['Annual_Energy_kWh'] * carbon_intensity) / 1000
         
-        # 6. Détection des anomalies : Serveurs "Zombies" (Usage < 10%)
+        # 5. Serveurs zombies
         zombies = df[df['CPU_Usage (%)'] < 10]
         
-        # 7. Agrégation des résultats pour le Dashboard
+        # 6. Dashboard metrics
         dashboard_metrics = {
             "total_servers": len(df),
             "total_energy_kwh": df['Annual_Energy_kWh'].sum(),
@@ -83,7 +72,7 @@ class GreenOpsEngine:
             "zombie_count": len(zombies),
             "wasted_cost_euros": zombies['Annual_Cost_Euros'].sum(),
             "wasted_carbon_tons": zombies['Annual_Carbon_kgCO2e'].sum() / 1000,
-            "model_used": "XGBoost"  # Indicateur du modèle utilisé
+            "model_used": "XGBoost"
         }
         
         return df, dashboard_metrics
