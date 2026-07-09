@@ -88,6 +88,10 @@
     <script>
         let serverCounter = 0;
 
+        // Année de référence utilisée pour les variables d'interaction
+        // (doit correspondre à reference_year=2024 utilisé côté Python/modèle)
+        const REFERENCE_YEAR = 2024;
+
         // Crée le HTML d'un bloc serveur
         function createServerBlock(index) {
             const num = index + 1;
@@ -113,7 +117,9 @@
                         </button>` : ''}
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+
+                <!-- Champs de saisie de base -->
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 mb-4">
                     <div>
                         <label class="text-xs text-slate-400 block mb-1">Usage CPU (%)</label>
                         <input type="number" placeholder="ex: 75" min="0" max="100"
@@ -140,8 +146,80 @@
                             class="tdp-limit w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"/>
                     </div>
                 </div>
+
+                <!-- Variables d'interaction (calculées automatiquement, lecture seule) -->
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-2">Variables d'interaction (calcul auto)</p>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">CPU_RAM_interaction</label>
+                        <input type="number" step="0.1" placeholder="auto"
+                            class="cpu-ram-interaction w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" disabled/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Cores_Year_interaction</label>
+                        <input type="number" step="0.1" placeholder="auto"
+                            class="cores-year-interaction w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" disabled/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">TDP_per_Core</label>
+                        <input type="number" step="0.1" placeholder="auto"
+                            class="tdp-per-core w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" disabled/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Efficiency_Score</label>
+                        <input type="number" step="0.01" placeholder="auto"
+                            class="efficiency-score w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" disabled/>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Density_Score</label>
+                        <input type="number" step="0.1" placeholder="auto"
+                            class="density-score w-full p-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" disabled/>
+                    </div>
+                </div>
             `;
             return div;
+        }
+
+        // Recalcule les 5 variables d'interaction pour un bloc donné,
+        // à partir de ses 5 champs de saisie de base.
+        // Mêmes formules que le feature engineering Python (add_interaction_features).
+        function updateInteractions(block) {
+            const cpuUsage   = parseFloat(block.querySelector('.cpu-usage').value);
+            const memoryGb   = parseFloat(block.querySelector('.memory-gb').value);
+            const cpuCores   = parseFloat(block.querySelector('.cpu-cores').value);
+            const hwYear     = parseFloat(block.querySelector('.hardware-year').value);
+            const tdpLimit   = parseFloat(block.querySelector('.tdp-limit').value);
+
+            const cpuRamField      = block.querySelector('.cpu-ram-interaction');
+            const coresYearField   = block.querySelector('.cores-year-interaction');
+            const tdpPerCoreField  = block.querySelector('.tdp-per-core');
+            const efficiencyField  = block.querySelector('.efficiency-score');
+            const densityField     = block.querySelector('.density-score');
+
+            // CPU_RAM_interaction = (CPU_Usage * Memory_Capacity) / 100
+            cpuRamField.value = (!isNaN(cpuUsage) && !isNaN(memoryGb))
+                ? ((cpuUsage * memoryGb) / 100).toFixed(2)
+                : '';
+
+            // Cores_Year_interaction = CPU_Cores * (REFERENCE_YEAR - Hardware_Year)
+            coresYearField.value = (!isNaN(cpuCores) && !isNaN(hwYear))
+                ? (cpuCores * (REFERENCE_YEAR - hwYear)).toFixed(2)
+                : '';
+
+            // TDP_per_Core = TDP_Limit / CPU_Cores
+            tdpPerCoreField.value = (!isNaN(tdpLimit) && !isNaN(cpuCores) && cpuCores !== 0)
+                ? (tdpLimit / cpuCores).toFixed(2)
+                : '';
+
+            // Efficiency_Score = (Hardware_Year / REFERENCE_YEAR) * (CPU_Cores / (TDP_Limit + 1))
+            efficiencyField.value = (!isNaN(hwYear) && !isNaN(cpuCores) && !isNaN(tdpLimit))
+                ? (((hwYear / REFERENCE_YEAR) * (cpuCores / (tdpLimit + 1)))).toFixed(4)
+                : '';
+
+            // Density_Score = Memory_Capacity / CPU_Cores
+            densityField.value = (!isNaN(memoryGb) && !isNaN(cpuCores) && cpuCores !== 0)
+                ? (memoryGb / cpuCores).toFixed(2)
+                : '';
         }
 
         // Ajoute un nouveau bloc serveur
@@ -178,63 +256,76 @@
             badge.textContent = `${count} serveur${count > 1 ? 's' : ''}`;
         }
 
+        // Délégation d'événement : recalcule les interactions du bloc concerné
+        // dès qu'un champ de base est modifié (fonctionne aussi pour les blocs
+        // ajoutés dynamiquement après le chargement de la page).
+        document.getElementById('servers-container').addEventListener('input', (e) => {
+            const baseFieldClasses = ['cpu-usage', 'memory-gb', 'cpu-cores', 'hardware-year', 'tdp-limit'];
+            const isBaseField = baseFieldClasses.some(cls => e.target.classList.contains(cls));
+            if (isBaseField) {
+                const block = e.target.closest('.server-block');
+                if (block) updateInteractions(block);
+            }
+        });
+
         // Lance l'audit multi-serveurs
         async function runAudit() {
-        const errorDiv = document.getElementById('error-message');
-        const resultsSection = document.getElementById('results-section');
-        errorDiv.classList.add('hidden');
-        resultsSection.classList.add('hidden');
-    
-        // Collecte tous les blocs
-        const blocks = document.querySelectorAll('.server-block');
-        const servers = [];
-    
-        for (const block of blocks) {
-            const cpu_usage   = parseFloat(block.querySelector('.cpu-usage').value);
-            const memory_gb   = parseFloat(block.querySelector('.memory-gb').value);
-            const cpu_cores   = parseInt(block.querySelector('.cpu-cores').value);
-            const hardware_year = parseInt(block.querySelector('.hardware-year').value);
-            const tdp_limit   = parseFloat(block.querySelector('.tdp-limit').value);
-            const server_name = block.querySelector('.server-name').value.trim() || null;
-    
-            if (isNaN(cpu_usage) || isNaN(memory_gb) || isNaN(cpu_cores) || isNaN(hardware_year) || isNaN(tdp_limit)) {
-                showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
-                return;
+            const errorDiv = document.getElementById('error-message');
+            const resultsSection = document.getElementById('results-section');
+            errorDiv.classList.add('hidden');
+            resultsSection.classList.add('hidden');
+
+            // Collecte tous les blocs
+            const blocks = document.querySelectorAll('.server-block');
+            const servers = [];
+
+            for (const block of blocks) {
+                const cpu_usage   = parseFloat(block.querySelector('.cpu-usage').value);
+                const memory_gb   = parseFloat(block.querySelector('.memory-gb').value);
+                const cpu_cores   = parseInt(block.querySelector('.cpu-cores').value);
+                const hardware_year = parseInt(block.querySelector('.hardware-year').value);
+                const tdp_limit   = parseFloat(block.querySelector('.tdp-limit').value);
+                const server_name = block.querySelector('.server-name').value.trim() || null;
+
+                if (isNaN(cpu_usage) || isNaN(memory_gb) || isNaN(cpu_cores) || isNaN(hardware_year) || isNaN(tdp_limit)) {
+                    showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
+                    return;
+                }
+
+                // === Noms des champs en anglais (correspondance schéma API) ===
+                servers.push({
+                    CPU_Usage: cpu_usage,
+                    Memory_Capacity: memory_gb,
+                    CPU_Cores: cpu_cores,
+                    Hardware_Year: hardware_year,
+                    TDP_Limit: tdp_limit,
+                    server_name: server_name
+                });
             }
-             // === CORRECTION : nom des champs en anglais ===
-            servers.push({
-                CPU_Usage: cpu_usage,
-                Memory_Capacity: memory_gb,
-                CPU_Cores: cpu_cores,
-                Hardware_Year: hardware_year,
-                TDP_Limit: tdp_limit,
-                server_name: server_name
-            });
-        }
-    
-        try {
-            // === URL RELATIVE ===
-            const response = await fetch('/audit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    servers,
-                    audit_name: `Audit_${new Date().toLocaleDateString('fr-FR')}`
-                })
-            });
-    
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || `Erreur HTTP ${response.status}`);
+
+            try {
+                // === URL RELATIVE ===
+                const response = await fetch('/audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        servers,
+                        audit_name: `Audit_${new Date().toLocaleDateString('fr-FR')}`
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || `Erreur HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+                displayResults(result);
+
+            } catch (err) {
+                showError(`Erreur lors de la connexion à l'API : ${err.message}`);
             }
-    
-            const result = await response.json();
-            displayResults(result);
-    
-        } catch (err) {
-            showError(`Erreur lors de la connexion à l'API : ${err.message}`);
         }
-    }
 
         // Affiche les résultats
         function displayResults(result) {
