@@ -180,55 +180,54 @@
 
         // Lance l'audit multi-serveurs
         async function runAudit() {
-            const errorDiv = document.getElementById('error-message');
-            const resultsSection = document.getElementById('results-section');
-            errorDiv.classList.add('hidden');
-            resultsSection.classList.add('hidden');
-
-            // Collecte tous les blocs
-            const blocks = document.querySelectorAll('.server-block');
-            const servers = [];
-
-            for (const block of blocks) {
-                const cpu_usage   = parseFloat(block.querySelector('.cpu-usage').value);
-                const memory_gb   = parseFloat(block.querySelector('.memory-gb').value);
-                const cpu_cores   = parseInt(block.querySelector('.cpu-cores').value);
-                const hardware_year = parseInt(block.querySelector('.hardware-year').value);
-                const tdp_limit   = parseFloat(block.querySelector('.tdp-limit').value);
-                const server_name = block.querySelector('.server-name').value.trim() || null;
-
-                // Validation simple
-                if (isNaN(cpu_usage) || isNaN(memory_gb) || isNaN(cpu_cores) || isNaN(hardware_year) || isNaN(tdp_limit)) {
-                    showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
-                    return;
-                }
-
-                servers.push({ cpu_usage, memory_gb, cpu_cores, hardware_year, tdp_limit, server_name });
+        const errorDiv = document.getElementById('error-message');
+        const resultsSection = document.getElementById('results-section');
+        errorDiv.classList.add('hidden');
+        resultsSection.classList.add('hidden');
+    
+        // Collecte tous les blocs
+        const blocks = document.querySelectorAll('.server-block');
+        const servers = [];
+    
+        for (const block of blocks) {
+            const cpu_usage   = parseFloat(block.querySelector('.cpu-usage').value);
+            const memory_gb   = parseFloat(block.querySelector('.memory-gb').value);
+            const cpu_cores   = parseInt(block.querySelector('.cpu-cores').value);
+            const hardware_year = parseInt(block.querySelector('.hardware-year').value);
+            const tdp_limit   = parseFloat(block.querySelector('.tdp-limit').value);
+            const server_name = block.querySelector('.server-name').value.trim() || null;
+    
+            if (isNaN(cpu_usage) || isNaN(memory_gb) || isNaN(cpu_cores) || isNaN(hardware_year) || isNaN(tdp_limit)) {
+                showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
+                return;
             }
-
-            // Appel à l'endpoint /audit
-            try {
-                const response = await fetch('http://localhost:8000/audit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        servers,
-                        audit_name: `Audit_${new Date().toLocaleDateString('fr-FR')}`
-                    })
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || `Erreur HTTP ${response.status}`);
-                }
-
-                const result = await response.json();
-                displayResults(result);
-
-            } catch (err) {
-                showError(`Erreur lors de la connexion à l'API : ${err.message}`);
-            }
+    
+            servers.push({ cpu_usage, memory_gb, cpu_cores, hardware_year, tdp_limit, server_name });
         }
+    
+        try {
+            // === URL RELATIVE ===
+            const response = await fetch('/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    servers,
+                    audit_name: `Audit_${new Date().toLocaleDateString('fr-FR')}`
+                })
+            });
+    
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || `Erreur HTTP ${response.status}`);
+            }
+    
+            const result = await response.json();
+            displayResults(result);
+    
+        } catch (err) {
+            showError(`Erreur lors de la connexion à l'API : ${err.message}`);
+        }
+    }
 
         // Affiche les résultats
         function displayResults(result) {
