@@ -6,9 +6,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
 import os
-import joblib
 
-# IMPORTANT : Charger XGBoost avec le format natif
+# IMPORTANT : Chargement natif XGBoost
 from xgboost import XGBRegressor
 
 app = FastAPI(title="GreenOps API", version="2.0")
@@ -49,7 +48,7 @@ class AuditResponse(BaseModel):
     aggregate_kpis: dict
     predictions: List[AuditPrediction]
 
-# === CHARGEMENT DU MODÈLE (FORMAT NATIF XGBOOST) ===
+# === CHARGEMENT DU MODÈLE AU FORMAT NATIF XGBOOST (.json) ===
 model_path = 'moteur_prediction_xgboost.json'
 
 if os.path.exists(model_path):
@@ -57,13 +56,7 @@ if os.path.exists(model_path):
     model.load_model(model_path)
     print("✅ Modèle XGBoost chargé au format natif (.json)")
 else:
-    # Fallback sur l'ancien format .pkl
-    fallback_path = 'moteur_prediction_xgboost.pkl'
-    if os.path.exists(fallback_path):
-        model = joblib.load(fallback_path)
-        print(f"⚠️ Fallback sur {fallback_path}")
-    else:
-        raise FileNotFoundError(f"❌ Aucun modèle trouvé : {model_path}")
+    raise FileNotFoundError(f"❌ Modèle introuvable : {model_path}")
 
 # === FEATURE ENGINEERING ===
 def add_interaction_features(df):
@@ -120,7 +113,7 @@ def predict(server: ServerData):
         
         watts = float(model.predict(df[features])[0])
         
-        # Sécurité : clip à 0 (pas de valeurs négatives)
+        # Sécurité : clip à 0
         if watts < 0:
             watts = 0.0
         
