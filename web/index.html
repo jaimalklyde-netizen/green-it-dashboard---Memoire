@@ -201,8 +201,15 @@
                 showError(`Veuillez remplir tous les champs pour le ${block.querySelector('h3').textContent}.`);
                 return;
             }
-    
-            servers.push({ cpu_usage, memory_gb, cpu_cores, hardware_year, tdp_limit, server_name });
+             // === CORRECTION : nom des champs en anglais ===
+            servers.push({
+                CPU_Usage: cpu_usage,
+                Memory_Capacity: memory_gb,
+                CPU_Cores: cpu_cores,
+                Hardware_Year: hardware_year,
+                TDP_Limit: tdp_limit,
+                server_name: server_name
+            });
         }
     
         try {
