@@ -1,0 +1,15 @@
+{
+  "features": [
+    "CPU_Usage (%)",
+    "Memory_Capacity (GB)",
+    "CPU_Cores",
+    "Hardware_Year",
+    "TDP_Limit",
+    "CPU_RAM_interaction",
+    "Cores_Year_interaction",
+    "TDP_per_Core",
+    "Efficiency_Score",
+    "Density_Score"
+  ],
+  "xgboost_version": "3.3.0"
+}
