@@ -1,6 +1,6 @@
 # ============================================================================
 # GREENOPS DASHBOARD - API FASTAPI (engine.py)
-# Version : 2.0 - Modèle XGBoost (chargement .pkl)
+# Version : 2.0 - Modèle XGBoost (chargement .pkl avec logs)
 # ============================================================================
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +11,11 @@ from typing import List, Optional
 import pandas as pd
 import os
 import joblib
+import logging
+
+# Configuration des logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GreenOps API", version="2.0")
 
@@ -55,7 +60,7 @@ model_path = 'moteur_prediction_xgboost.pkl'
 
 if os.path.exists(model_path):
     model = joblib.load(model_path)
-    print(f"✅ Modèle XGBoost chargé depuis {model_path}")
+    logger.info(f"✅ Modèle XGBoost chargé depuis {model_path}")
 else:
     raise FileNotFoundError(f"❌ Modèle introuvable : {model_path}")
 
@@ -95,6 +100,8 @@ def health():
 @app.post("/predict")
 def predict(server: ServerData):
     try:
+        logger.info(f"🔍 Données reçues : CPU={server.CPU_Usage}, RAM={server.Memory_Capacity}, Cœurs={server.CPU_Cores}, Année={server.Hardware_Year}, TDP={server.TDP_Limit}")
+        
         df = pd.DataFrame([{
             "CPU_Usage (%)": server.CPU_Usage,
             "Memory_Capacity (GB)": server.Memory_Capacity,
@@ -103,7 +110,11 @@ def predict(server: ServerData):
             "TDP_Limit": server.TDP_Limit
         }])
         
+        logger.info(f"🔍 DataFrame avant FE : {df.to_dict()}")
+        
         df = add_interaction_features(df)
+        
+        logger.info(f"🔍 DataFrame après FE : {df.to_dict()}")
         
         features = [
             "CPU_Usage (%)", "Memory_Capacity (GB)", "CPU_Cores",
@@ -112,7 +123,12 @@ def predict(server: ServerData):
             "TDP_per_Core", "Efficiency_Score", "Density_Score"
         ]
         
-        watts = float(model.predict(df[features])[0])
+        X = df[features]
+        logger.info(f"🔍 Features envoyées au modèle : {X.iloc[0].to_dict()}")
+        
+        watts = float(model.predict(X)[0])
+        logger.info(f"🔍 Prédiction brute : {watts}")
+        
         if watts < 0:
             watts = 0.0
         
@@ -127,6 +143,7 @@ def predict(server: ServerData):
             "estimated_cost_euros_per_year": round(cost_euros_per_year, 2)
         }
     except Exception as e:
+        logger.error(f"❌ Erreur : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/audit", response_model=AuditResponse)
@@ -186,4 +203,5 @@ def audit(request: AuditRequest):
         )
         
     except Exception as e:
+        logger.error(f"❌ Erreur audit : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
