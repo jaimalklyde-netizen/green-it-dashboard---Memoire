@@ -1,3 +1,7 @@
+# ============================================================================
+# GREENOPS DASHBOARD - API FASTAPI (engine.py)
+# Version : 2.0 - Modèle XGBoost (chargement .pkl)
+# ============================================================================
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -6,9 +10,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
 import os
-
-# IMPORTANT : Chargement natif XGBoost
-from xgboost import XGBRegressor
+import joblib
 
 app = FastAPI(title="GreenOps API", version="2.0")
 
@@ -48,13 +50,12 @@ class AuditResponse(BaseModel):
     aggregate_kpis: dict
     predictions: List[AuditPrediction]
 
-# === CHARGEMENT DU MODÈLE AU FORMAT NATIF XGBOOST (.json) ===
-model_path = 'moteur_prediction_xgboost.json'
+# === CHARGEMENT DU MODÈLE XGBOOST EN .pkl ===
+model_path = 'moteur_prediction_xgboost.pkl'
 
 if os.path.exists(model_path):
-    model = XGBRegressor()
-    model.load_model(model_path)
-    print("✅ Modèle XGBoost chargé au format natif (.json)")
+    model = joblib.load(model_path)
+    print(f"✅ Modèle XGBoost chargé depuis {model_path}")
 else:
     raise FileNotFoundError(f"❌ Modèle introuvable : {model_path}")
 
@@ -112,8 +113,6 @@ def predict(server: ServerData):
         ]
         
         watts = float(model.predict(df[features])[0])
-        
-        # Sécurité : clip à 0
         if watts < 0:
             watts = 0.0
         
@@ -157,8 +156,6 @@ def audit(request: AuditRequest):
             ]
             
             watts = float(model.predict(df[features])[0])
-            
-            # Sécurité : clip à 0
             if watts < 0:
                 watts = 0.0
             
