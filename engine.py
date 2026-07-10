@@ -1,6 +1,6 @@
 # ============================================================================
 # GREENOPS DASHBOARD - API FASTAPI (engine.py)
-# VERSION SPÉCIALE DÉBOGAGE - AVEC LOGS
+# Version : 2.0 - Modèle XGBoost (format UBJ portable)
 # ============================================================================
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -10,11 +10,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
 import os
-import joblib
+from xgboost import XGBRegressor
 import logging
 import sys
 
-# === Configuration des logs pour Render ===
+# === Configuration des logs ===
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s - %(message)s',
@@ -60,18 +60,16 @@ class AuditResponse(BaseModel):
     aggregate_kpis: dict
     predictions: List[AuditPrediction]
 
-# === CHARGEMENT DU MODÈLE XGBOOST EN .pkl ===
-model_path = 'moteur_prediction_xgboost.pkl'
+# === CHARGEMENT DU MODÈLE XGBOOST EN .ubj ===
+model_path = 'moteur_prediction_xgboost.ubj'
 
 if os.path.exists(model_path):
     try:
-        model = joblib.load(model_path)
+        model = XGBRegressor()
+        model.load_model(model_path)
         logger.info(f"✅ Modèle XGBoost chargé depuis {model_path}")
-        logger.info(f"🔍 Type du modèle : {type(model)}")
-        logger.info(f"🔍 Modèle entraîné ? Vérification des attributs : {hasattr(model, 'predict')}")
         
-        # === TEST DE PRÉDICTION AU DÉMARRAGE ===
-        # On teste le modèle avec des données factices pour vérifier qu'il répond
+        # Test de prédiction au démarrage
         test_df = pd.DataFrame([{
             "CPU_Usage (%)": 75,
             "Memory_Capacity (GB)": 64,
@@ -79,31 +77,26 @@ if os.path.exists(model_path):
             "Hardware_Year": 2020,
             "TDP_Limit": 150
         }])
-        
-        # Feature engineering de test
         test_df["CPU_RAM_interaction"] = (test_df["CPU_Usage (%)"] * test_df["Memory_Capacity (GB)"]) / 100
         test_df["Cores_Year_interaction"] = test_df["CPU_Cores"] * (2024 - test_df["Hardware_Year"])
         test_df["TDP_per_Core"] = test_df["TDP_Limit"] / test_df["CPU_Cores"]
         test_df["Efficiency_Score"] = (test_df["Hardware_Year"] / 2024) * (test_df["CPU_Cores"] / (test_df["TDP_Limit"] + 1))
         test_df["Density_Score"] = test_df["Memory_Capacity (GB)"] / test_df["CPU_Cores"]
-        
         test_features = [
             "CPU_Usage (%)", "Memory_Capacity (GB)", "CPU_Cores",
             "Hardware_Year", "TDP_Limit",
             "CPU_RAM_interaction", "Cores_Year_interaction",
             "TDP_per_Core", "Efficiency_Score", "Density_Score"
         ]
-        
         test_pred = float(model.predict(test_df[test_features])[0])
-        logger.info(f"🧪 PRÉDICTION DE TEST AU DÉMARRAGE : {test_pred:.2f} W")
-        
+        logger.info(f"🧪 PRÉDICTION DE TEST : {test_pred:.2f} W")
         if test_pred > 0:
-            logger.info("✅ Le modèle fonctionne correctement sur Render !")
+            logger.info("✅ Le modèle fonctionne correctement !")
         else:
-            logger.warning(f"⚠️ ATTENTION : Le modèle prédit {test_pred} sur Render (devrait être > 0)")
-
+            logger.warning(f"⚠️ ATTENTION : Le modèle prédit {test_pred}")
+            
     except Exception as e:
-        logger.error(f"❌ ERREUR lors du chargement du modèle : {str(e)}")
+        logger.error(f"❌ ERREUR : {str(e)}")
         raise
 else:
     raise FileNotFoundError(f"❌ Modèle introuvable : {model_path}")
@@ -144,11 +137,6 @@ def health():
 @app.post("/predict")
 def predict(server: ServerData):
     try:
-        logger.info("=" * 60)
-        logger.info("🔍 NOUVELLE PRÉDICTION")
-        logger.info(f"📥 Données reçues : CPU={server.CPU_Usage}, RAM={server.Memory_Capacity}, Cœurs={server.CPU_Cores}, Année={server.Hardware_Year}, TDP={server.TDP_Limit}")
-        
-        # === 1. CRÉATION DU DATAFRAME ===
         df = pd.DataFrame([{
             "CPU_Usage (%)": server.CPU_Usage,
             "Memory_Capacity (GB)": server.Memory_Capacity,
@@ -156,13 +144,9 @@ def predict(server: ServerData):
             "Hardware_Year": server.Hardware_Year,
             "TDP_Limit": server.TDP_Limit
         }])
-        logger.info(f"📊 DataFrame avant FE :\n{df.to_string()}")
         
-        # === 2. FEATURE ENGINEERING ===
         df = add_interaction_features(df)
-        logger.info(f"📊 DataFrame après FE :\n{df.to_string()}")
         
-        # === 3. SÉLECTION DES FEATURES ===
         features = [
             "CPU_Usage (%)", "Memory_Capacity (GB)", "CPU_Cores",
             "Hardware_Year", "TDP_Limit",
@@ -170,25 +154,13 @@ def predict(server: ServerData):
             "TDP_per_Core", "Efficiency_Score", "Density_Score"
         ]
         
-        X = df[features]
-        logger.info(f"📊 Features envoyées au modèle :\n{X.to_string()}")
-        
-        # === 4. PRÉDICTION ===
-        watts = float(model.predict(X)[0])
-        logger.info(f"⚡ Prédiction brute : {watts:.4f} W")
-        
-        # === 5. SÉCURITÉ ===
+        watts = float(model.predict(df[features])[0])
         if watts < 0:
-            logger.warning(f"⚠️ Prédiction négative ({watts:.2f} W), mise à 0")
             watts = 0.0
         
-        # === 6. CALCULS ===
         kwh_per_year = (watts / 1000) * 8760
         co2_kg_per_year = kwh_per_year * 0.05
         cost_euros_per_year = kwh_per_year * 0.25
-        
-        logger.info(f"📈 Résultat : {watts:.2f} W → {kwh_per_year:.2f} kWh/an")
-        logger.info("=" * 60)
         
         return {
             "predicted_watts": round(watts, 2),
@@ -197,7 +169,7 @@ def predict(server: ServerData):
             "estimated_cost_euros_per_year": round(cost_euros_per_year, 2)
         }
     except Exception as e:
-        logger.error(f"❌ ERREUR : {str(e)}")
+        logger.error(f"❌ Erreur predict : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/audit", response_model=AuditResponse)
@@ -257,5 +229,5 @@ def audit(request: AuditRequest):
         )
         
     except Exception as e:
-        logger.error(f"❌ ERREUR audit : {str(e)}")
+        logger.error(f"❌ Erreur audit : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
